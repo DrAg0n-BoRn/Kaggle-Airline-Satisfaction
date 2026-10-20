@@ -7,7 +7,7 @@ jupyter:
       format_version: '1.3'
       jupytext_version: 1.19.6
   kernelspec:
-    display_name: pregnancy-hypothyroidism
+    display_name: kaggle-airline-satisfaction (3.14.x)
     language: python
     name: python3
 ---
@@ -17,8 +17,8 @@ from dragon.ML_datasetmaster import DragonDataset as ChosenDataset
 from dragon.ML_trainer import DragonTrainer as ChosenTrainer
 from dragon.ML_models import DragonNodeModel as ChosenModel
 from dragon.ML_configuration import (
-    FormatMultiTargetRegressionMetrics as ChosenMetricsConfig, 
-    FinalizeMultiTargetRegression as ChosenFinalizer 
+    FormatBinaryClassificationMetrics as ChosenMetricsConfig, 
+    FinalizeBinaryClassification as ChosenFinalizer 
 )
 
 from dragon.ML_configuration import DragonTrainingConfig
@@ -39,7 +39,7 @@ from helpers.constants import TARGET
 ```python
 SCHEMA_PATH = PM.engineering
 TRAIN_DATASET_PATH = PM.datasets
-TRAIN_ARTIFACTS_DIR = PM.regression
+TRAIN_ARTIFACTS_DIR = PM.classification
 ```
 
 ## 1. Load Schema and Dataset
@@ -58,12 +58,11 @@ dataset = ChosenDataset.from_bundle(TRAIN_DATASET_PATH, verbose=True)
 train_config = DragonTrainingConfig(
     finalized_filename = "node",
     initial_learning_rate=0.001,
-    batch_size=32,
+    batch_size=256,
     device = "cuda:0",
-    task = TaskKeys.REGRESSION,
+    task = TaskKeys.BINARY_CLASSIFICATION,
     
     target=TARGET,
-    # targets=[TARGET_A, TARGET_B] # multitarget tasks
     weight_decay=0.005,
     early_stop_patience=25,
     scheduler_patience=6,
@@ -77,22 +76,22 @@ train_config = DragonTrainingConfig(
 ```python
 # Model
 model = ChosenModel(schema=schema,
-                    out_targets=dataset.number_of_targets, # set to number of classes for classification tasks
-                    embedding_dim=16,
-                    num_trees=256,
-                    num_layers=1,
-                    tree_depth=3,
+                    out_targets=1, # binary classification
+                    embedding_dim=24,
+                    num_trees=512,
+                    num_layers=2,
+                    tree_depth=4,
                     additional_tree_output_dim=3,
                     input_dropout=0.0,
                     embedding_dropout=0.0,
-                    choice_function='entmax',
-                    bin_function='entmoid',
+                    choice_function='sparsemax',
+                    bin_function='sparsemoid',
                     batch_norm_continuous=True
                     )
 
 # Initialize decision thresholds before training.
 if hasattr(model, "data_aware_initialization"):
-    model.data_aware_initialization(train_dataset=dataset.train_dataset, num_samples=1000)
+    model.data_aware_initialization(train_dataset=dataset.train_dataset, num_samples=2000)
 
 # Optimizer
 optim_params = build_optimizer_params(model=model, weight_decay=train_config.weight_decay)
@@ -117,7 +116,7 @@ trainer = ChosenTrainer(model=model,
 ## 4. Training
 
 ```python
-trainer.fit(epochs=500, 
+trainer.fit(epochs=1000, 
             batch_size=train_config.batch_size, 
             use_torch_compile=True)
 ```
@@ -125,11 +124,11 @@ trainer.fit(epochs=500,
 ## 5. Evaluation
 
 ```python
+BINARY_THRESHOLD = 0.41
+
 trainer.evaluate(model_checkpoint="best",
-                test_data=dataset.test_dataset,
                 val_format_configuration=ChosenMetricsConfig(),
-                test_format_configuration=ChosenMetricsConfig(),
-                # classification_threshold=0.5 # for binary classification tasks
+                classification_threshold=BINARY_THRESHOLD # for binary classification tasks
                 )
 ```
 
@@ -137,13 +136,14 @@ trainer.evaluate(model_checkpoint="best",
 
 ```python
 trainer.explain_captum(n_samples=500,
-                       n_steps=200)
+                       n_steps=200,
+                       target_names=[dataset.classes[1]])
 ```
 
 ```python
-trainer.explain_shap(explain_dataset=dataset.test_dataset,
-                    n_samples=100,
-                    explainer_type="kernel")
+trainer.explain_shap(n_samples=100,
+                    explainer_type="kernel",
+                    target_names=[dataset.classes[1]])
 ```
 
 ## 6. Save artifacts
@@ -163,5 +163,7 @@ trainer.save_training_log(train_config=train_config)
 
 ```python
 trainer.finalize_model_training(finalize_config=ChosenFinalizer(filename=train_config.finalized_filename,
-                                                                target_name=train_config.target))
+                                                                target_name=train_config.target,
+                                                                classification_threshold=BINARY_THRESHOLD,
+                                                                class_map=dataset.class_map))
 ```

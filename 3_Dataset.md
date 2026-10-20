@@ -6,13 +6,16 @@ jupyter:
       format_name: markdown
       format_version: '1.3'
       jupytext_version: 1.19.6
+  kernelspec:
+    display_name: kaggle-airline-satisfaction (3.14.x)
+    language: python
+    name: python3
 ---
 
 ```python
 from dragon.ML_datasetmaster import DragonDataset as ChosenDataset
 from dragon.utilities import load_dataframe_with_schema
 from dragon.schema import FeatureSchema
-from dragon.IO_tools import load_json
 from dragon.keys import TaskKeys
 
 from paths import PM
@@ -20,7 +23,7 @@ from paths import PM
 
 ```python
 SCHEMA_PATH = PM.engineering
-TRAIN_DATASET_INPUT_FILE = PM.imputation_file
+TRAIN_DATASET_INPUT_FILE = PM.engineering_train_file
 TRAIN_DATASET_OUTPUT_DIR = PM.datasets
 ```
 
@@ -33,22 +36,18 @@ df, _ = load_dataframe_with_schema(df_path=TRAIN_DATASET_INPUT_FILE,
                                    schema=schema)
 ```
 
-```python
-# target_class_map = load_json(PM.target_class_map_file)
-```
-
 ## 2. Make Dataset Class
 
 ```python
 dataset = ChosenDataset(pandas_df=df,
                         schema=schema,
-                        kind=TaskKeys.REGRESSION,
+                        kind=TaskKeys.BINARY_CLASSIFICATION,
                         feature_scaler="fit",
-                        target_scaler="fit", # none for classification/autoencoder tasks
-                        validation_size=0.2,
-                        test_size=0.1,
+                        target_scaler="none", # none for classification/autoencoder tasks
+                        validation_size=0.3,
+                        test_size=None,
                         random_state=42,
-                        # class_map=target_class_map # for classification tasks
+                        class_map={"Not Satisfied": 0, "Satisfied": 1}
                         )
 ```
 
